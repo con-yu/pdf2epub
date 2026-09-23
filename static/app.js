@@ -6,11 +6,14 @@
   const fileInfo = $("file-info");
   const btnAnalyze = $("btn-analyze");
   const btnConvert = $("btn-convert");
+  const btnPreviewPdf = $("btn-preview-pdf");
+  const btnPreviewEpub = $("btn-preview-epub");
   const statusEl = $("status");
 
   let currentFile = null;
   let sessionId = null;
   let bookTitle = "";
+  let epubBlob = null;
 
   /* ---------- 配置收集 ---------- */
   $("cfg-lh").addEventListener("input", (e) => ($("lh-val").textContent = e.target.value));
@@ -62,11 +65,14 @@
     }
     currentFile = file;
     sessionId = null;
+    epubBlob = null;
     const mb = (file.size / 1024 / 1024).toFixed(2);
     fileInfo.innerHTML = `<span>📄 ${escapeHtml(file.name)}</span><span>${mb} MB</span>`;
     fileInfo.classList.remove("hidden");
     btnAnalyze.disabled = false;
     btnConvert.disabled = false;
+    btnPreviewPdf.disabled = false;
+    btnPreviewEpub.disabled = true;
     setStatus("文件已就绪，建议先点击「分析排版」检查章节结构。");
   }
 
@@ -159,16 +165,199 @@
       const cd = res.headers.get("Content-Disposition") || "";
       const m = cd.match(/filename\*=UTF-8''([^;]+)/);
       const name = m ? decodeURIComponent(m[1]) : `${bookTitle || "book"}.epub`;
+      epubBlob = blob;
+      btnPreviewEpub.disabled = false;
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
       a.download = name;
       a.click();
       URL.revokeObjectURL(a.href);
-      setStatus(`转换完成，已下载 ${name}（${(blob.size / 1024 / 1024).toFixed(2)} MB）`);
+      setStatus(`转换完成，已下载 ${name}（${(blob.size / 1024 / 1024).toFixed(2)} MB），可点击「预览 EPUB」查看效果。`);
     } catch (e) {
       setStatus(e.message, true);
     } finally {
       setLoading(btnConvert, false);
     }
+  });
+
+  /* ---------- 预览阅读器 ---------- */
+  const modal = $("preview-modal");
+  const tocList = $("toc-list");
+  const content = $("preview-content");
+  const pvPrev = $("pv-prev");
+  const pvNext = $("pv-next");
+  const pvPage = $("pv-page");
+
+  let previewMode = null; // "pdf" | "epub"
+  let pdfDoc = null, pdfPageNo = 1, pdfRendering = false, pdfPending = null;
+  let epubBook = null, rendition = null;
+
+  pdfjsLib.GlobalWorkerOptions.workerSrc = "/static/vendor/pdf.worker.min.js";
+
+  function openModal(title) {
+    $("preview-title").textContent = title;
+    tocList.innerHTML = "";
+    content.innerHTML = "";
+    pvPage.textContent = "";
+    modal.classList.remove("hidden");
+    document.body.style.overflow = "hidden";
+  }
+
+  function closeModal() {
+    modal.classList.add("hidden");
+    document.body.style.overflow = "";
+    if (rendition) { try { rendition.destroy(); } catch (e) {} rendition = null; }
+    if (epubBook) { try { epubBook.destroy(); } catch (e) {} epubBook = null; }
+    if (pdfDoc) { try { pdfDoc.destroy(); } catch (e) {} pdfDoc = null; }
+    previewMode = null;
+    content.classList.remove("epub-mode");
+  }
+
+  $("pv-close").addEventListener("click", closeModal);
+  modal.addEventListener("click", (e) => { if (e.target === modal) closeModal(); });
+  document.addEventListener("keydown", (e) => {
+    if (modal.classList.contains("hidden")) return;
+    if (e.key === "Escape") closeModal();
+    else if (e.key === "ArrowLeft") pvPrev.click();
+    else if (e.key === "ArrowRight") pvNext.click();
+  });
+
+  function renderTocItems(items, depth, onClick, labelOf, childrenOf) {
+    items.forEach((it) => {
+      const btn = document.createElement("button");
+      btn.className = "toc-item lv" + Math.min(depth + 1, 4);
+      btn.textContent = labelOf(it);
+      btn.title = btn.textContent;
+      btn.addEventListener("click", () => onClick(it));
+      tocList.appendChild(btn);
+      const children = childrenOf(it);
+      if (children && children.length) renderTocItems(children, depth + 1, onClick, labelOf, childrenOf);
+    });
+  }
+
+  function showTocEmpty(msg) {
+    tocList.innerHTML = `<div class="toc-empty">${escapeHtml(msg)}</div>`;
+  }
+
+  /* ----- PDF 预览（pdf.js） ----- */
+  btnPreviewPdf.addEventListener("click", async () => {
+    if (!currentFile) return;
+    openModal(`PDF 预览 · ${currentFile.name}`);
+    previewMode = "pdf";
+    content.classList.remove("epub-mode");
+    showTocEmpty("正在读取目录…");
+    const canvas = document.createElement("canvas");
+    content.appendChild(canvas);
+    const ctx = canvas.getContext("2d");
+
+    try {
+      const data = await currentFile.arrayBuffer();
+      pdfDoc = await pdfjsLib.getDocument({
+        data,
+        cMapUrl: "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/cmaps/",
+        cMapPacked: true,
+        standardFontDataUrl: "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/standard_fonts/",
+      }).promise;
+      pdfPageNo = 1;
+
+      const outline = await pdfDoc.getOutline();
+      if (outline && outline.length) {
+        tocList.innerHTML = "";
+        renderTocItems(
+          outline, 0,
+          (it) => gotoPdfDest(it.dest),
+          (it) => it.title || "(未命名)",
+          (it) => it.items
+        );
+      } else {
+        showTocEmpty("该 PDF 无书签目录，可使用上一页 / 下一页翻页。");
+      }
+      await renderPdfPage(1);
+    } catch (e) {
+      showTocEmpty(`PDF 加载失败：${e.message}`);
+    }
+
+    async function renderPdfPage(n) {
+      if (pdfRendering) { pdfPending = n; return; }
+      pdfRendering = true;
+      try {
+        const page = await pdfDoc.getPage(n);
+        const base = page.getViewport({ scale: 1 });
+        const scale = Math.max((content.clientWidth - 40) / base.width, 0.4);
+        const vp = page.getViewport({ scale });
+        canvas.width = vp.width;
+        canvas.height = vp.height;
+        await page.render({ canvasContext: ctx, viewport: vp }).promise;
+        pdfPageNo = n;
+        pvPage.textContent = `${n} / ${pdfDoc.numPages}`;
+        pvPrev.disabled = n <= 1;
+        pvNext.disabled = n >= pdfDoc.numPages;
+        content.scrollTop = 0;
+      } finally {
+        pdfRendering = false;
+        if (pdfPending !== null && pdfPending !== pdfPageNo) {
+          const p = pdfPending;
+          pdfPending = null;
+          renderPdfPage(p);
+        } else {
+          pdfPending = null;
+        }
+      }
+    }
+
+    async function gotoPdfDest(dest) {
+      if (!pdfDoc || !dest) return;
+      try {
+        const d = typeof dest === "string" ? await pdfDoc.getDestination(dest) : dest;
+        if (!d || !d[0]) return;
+        const idx = await pdfDoc.getPageIndex(d[0]);
+        await renderPdfPage(idx + 1);
+      } catch (e) { /* 忽略无效目录项 */ }
+    }
+
+    pvPrev.onclick = () => { if (pdfPageNo > 1) renderPdfPage(pdfPageNo - 1); };
+    pvNext.onclick = () => { if (pdfDoc && pdfPageNo < pdfDoc.numPages) renderPdfPage(pdfPageNo + 1); };
+  });
+
+  /* ----- EPUB 预览（epub.js） ----- */
+  btnPreviewEpub.addEventListener("click", async () => {
+    if (!epubBlob) return;
+    openModal(`EPUB 预览 · ${bookTitle || "book"}.epub`);
+    previewMode = "epub";
+    content.classList.add("epub-mode");
+    showTocEmpty("正在读取目录…");
+
+    try {
+      const buf = await epubBlob.arrayBuffer();
+      epubBook = ePub(buf);
+      rendition = epubBook.renderTo(content, {
+        width: "100%",
+        height: "100%",
+        flow: "scrolled-doc",
+        spread: "none",
+      });
+      await rendition.display();
+
+      const nav = await epubBook.loaded.navigation;
+      if (nav.toc && nav.toc.length) {
+        tocList.innerHTML = "";
+        renderTocItems(
+          nav.toc, 0,
+          (it) => rendition.display(it.href),
+          (it) => (it.label || "").trim() || "(未命名)",
+          (it) => it.subitems
+        );
+      } else {
+        showTocEmpty("该 EPUB 无目录，可使用上一页 / 下一页翻页。");
+      }
+      pvPage.textContent = "";
+      pvPrev.disabled = false;
+      pvNext.disabled = false;
+    } catch (e) {
+      showTocEmpty(`EPUB 加载失败：${e.message}`);
+    }
+
+    pvPrev.onclick = () => rendition && rendition.prev();
+    pvNext.onclick = () => rendition && rendition.next();
   });
 })();

@@ -104,7 +104,8 @@ def build_epub(model, config):
                             lang=model["language"])
         ech.level = ch.level
         ech.content = _chapter_html(ch)
-        ech.add_item(css)
+        # add_item(css) 会原样写入 "style/style.css"，章节位于 text/ 下需用相对路径
+        ech.add_link(href="../style/style.css", rel="stylesheet", type="text/css")
         book.add_item(ech)
         epub_chapters.append(ech)
 

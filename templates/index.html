@@ -66,6 +66,10 @@
       <button id="btn-analyze" class="btn btn-secondary" disabled>分析排版</button>
       <button id="btn-convert" class="btn btn-primary" disabled>转换并下载 EPUB</button>
     </div>
+    <div class="actions">
+      <button id="btn-preview-pdf" class="btn btn-ghost" disabled>👁 预览 PDF</button>
+      <button id="btn-preview-epub" class="btn btn-ghost" disabled>👁 预览 EPUB</button>
+    </div>
     <p id="status" class="status"></p>
   </section>
 
@@ -88,6 +92,31 @@
   <div class="container">本地运行 · 文件不会上传到任何服务器</div>
 </footer>
 
+<!-- 预览阅读器 -->
+<div id="preview-modal" class="modal hidden" role="dialog" aria-modal="true">
+  <div class="modal-box">
+    <div class="modal-head">
+      <span id="preview-title" class="modal-title"></span>
+      <div class="modal-tools">
+        <button id="pv-prev" class="tool-btn">‹ 上一页</button>
+        <span id="pv-page" class="pv-page"></span>
+        <button id="pv-next" class="tool-btn">下一页 ›</button>
+        <button id="pv-close" class="tool-btn close-btn">✕ 关闭</button>
+      </div>
+    </div>
+    <div class="modal-body">
+      <aside id="preview-toc" class="preview-toc">
+        <div class="toc-caption">目录</div>
+        <div id="toc-list"></div>
+      </aside>
+      <div id="preview-content" class="preview-content"></div>
+    </div>
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='vendor/pdf.min.js') }}"></script>
+<script src="{{ url_for('static', filename='vendor/jszip.min.js') }}"></script>
+<script src="{{ url_for('static', filename='vendor/epub.min.js') }}"></script>
 <script src="{{ url_for('static', filename='app.js') }}"></script>
 </body>
 </html>
