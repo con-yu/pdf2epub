@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+build/
+dist/
+
+# 虚拟环境
+.venv/
+venv/
+env/
+
+# 测试生成物
+tests/*.epub
+tests/output_*.epub
+
+# 运行时上传/输出目录
+uploads/
+outputs/
+*.log
+
+# 编辑器 / 系统
+.idea/
+.vscode/
+.DS_Store

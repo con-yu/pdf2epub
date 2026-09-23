@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PDF → EPUB 转换器</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<header class="site-header">
+  <div class="container">
+    <h1><span class="logo">📖</span> PDF → EPUB 转换器</h1>
+    <p class="subtitle">高质量电子书转换 · 目录跳转 · 排版检查</p>
+  </div>
+</header>
+
+<main class="container layout">
+  <section class="panel">
+    <h2 class="panel-title">1. 上传 PDF</h2>
+    <div id="dropzone" class="dropzone" tabindex="0">
+      <input type="file" id="file-input" accept=".pdf" hidden>
+      <div class="dz-inner">
+        <div class="dz-icon">⬆</div>
+        <p class="dz-text">点击选择或拖拽 PDF 文件到此处</p>
+        <p class="dz-hint">支持带书签的 PDF，自动识别章节目录</p>
+      </div>
+    </div>
+    <div id="file-info" class="file-info hidden"></div>
+
+    <h2 class="panel-title">2. 转换参数</h2>
+    <div class="form-grid">
+      <label class="field">
+        <span>书名（留空自动识别）</span>
+        <input type="text" id="cfg-title" placeholder="自动识别">
+      </label>
+      <label class="field">
+        <span>作者（留空自动识别）</span>
+        <input type="text" id="cfg-author" placeholder="自动识别">
+      </label>
+      <label class="field">
+        <span>正文字体</span>
+        <select id="cfg-font">
+          <option value="serif" selected>衬线（宋体系）</option>
+          <option value="sans">无衬线（黑体系）</option>
+          <option value="kai">楷体</option>
+        </select>
+      </label>
+      <label class="field">
+        <span>行距 <b id="lh-val">1.8</b></span>
+        <input type="range" id="cfg-lh" min="1.2" max="2.6" step="0.1" value="1.8">
+      </label>
+      <label class="field">
+        <span>标题字号阈值 <b id="scale-val">1.15</b></span>
+        <input type="range" id="cfg-scale" min="1.05" max="1.6" step="0.05" value="1.15">
+      </label>
+    </div>
+    <div class="checks">
+      <label><input type="checkbox" id="cfg-toc" checked> 优先使用 PDF 书签目录</label>
+      <label><input type="checkbox" id="cfg-pattern" checked> 识别“第X章”模式标题</label>
+      <label><input type="checkbox" id="cfg-strip" checked> 去除页眉页脚与页码</label>
+      <label><input type="checkbox" id="cfg-images" checked> 提取正文图片</label>
+      <label><input type="checkbox" id="cfg-indent" checked> 段首缩进两字符</label>
+    </div>
+
+    <div class="actions">
+      <button id="btn-analyze" class="btn btn-secondary" disabled>分析排版</button>
+      <button id="btn-convert" class="btn btn-primary" disabled>转换并下载 EPUB</button>
+    </div>
+    <p id="status" class="status"></p>
+  </section>
+
+  <section class="panel" id="result-panel">
+    <h2 class="panel-title">3. 排版检查报告</h2>
+    <div id="empty-result" class="empty-result">
+      <p>上传 PDF 并点击「分析排版」后，这里会显示章节结构与排版检查结果。</p>
+    </div>
+    <div id="result" class="hidden">
+      <div id="book-meta" class="book-meta"></div>
+      <div id="stats" class="stats"></div>
+      <div id="warnings" class="warnings"></div>
+      <h3 class="toc-heading">章节结构</h3>
+      <div id="chapter-tree" class="chapter-tree"></div>
+    </div>
+  </section>
+</main>
+
+<footer class="site-footer">
+  <div class="container">本地运行 · 文件不会上传到任何服务器</div>
+</footer>
+
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>
