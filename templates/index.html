@@ -114,6 +114,11 @@
   </div>
 </div>
 
+<script>
+  // 应用根路径（子路径部署时由 ProxyFix 生成前缀），供 fetch 与静态资源使用
+  window.APP_BASE = "{{ url_for('index') }}";
+  window.VENDOR_BASE = "{{ url_for('static', filename='vendor/') }}";
+</script>
 <script src="{{ url_for('static', filename='vendor/pdf.min.js') }}"></script>
 <script src="{{ url_for('static', filename='vendor/jszip.min.js') }}"></script>
 <script src="{{ url_for('static', filename='vendor/epub.min.js') }}"></script>

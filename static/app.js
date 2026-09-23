@@ -15,6 +15,10 @@
   let bookTitle = "";
   let epubBlob = null;
 
+  // 应用根路径：直连时为 "/"，子路径部署（如 /pdf2epub/）时为对应前缀
+  const APP_BASE = window.APP_BASE || "/";
+  const api = (path) => APP_BASE + path;
+
   /* ---------- 配置收集 ---------- */
   $("cfg-lh").addEventListener("input", (e) => ($("lh-val").textContent = e.target.value));
   $("cfg-scale").addEventListener("input", (e) => ($("scale-val").textContent = e.target.value));
@@ -89,7 +93,7 @@
       const fd = new FormData();
       fd.append("file", currentFile);
       fd.append("config", JSON.stringify(collectConfig()));
-      const res = await fetch("/api/analyze", { method: "POST", body: fd });
+      const res = await fetch(api("api/analyze"), { method: "POST", body: fd });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "分析失败");
       sessionId = data.session;
@@ -145,14 +149,14 @@
         const fd = new FormData();
         fd.append("file", currentFile);
         fd.append("config", JSON.stringify(collectConfig()));
-        const res = await fetch("/api/analyze", { method: "POST", body: fd });
+        const res = await fetch(api("api/analyze"), { method: "POST", body: fd });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || "分析失败");
         sid = data.session;
         sessionId = sid;
         renderReport(data.report);
       }
-      const res = await fetch("/api/convert", {
+      const res = await fetch(api("api/convert"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ session: sid, config: collectConfig() }),
@@ -192,7 +196,8 @@
   let pdfDoc = null, pdfPageNo = 1, pdfRendering = false, pdfPending = null;
   let epubBook = null, rendition = null;
 
-  pdfjsLib.GlobalWorkerOptions.workerSrc = "/static/vendor/pdf.worker.min.js";
+  pdfjsLib.GlobalWorkerOptions.workerSrc =
+    (window.VENDOR_BASE || "/static/vendor/") + "pdf.worker.min.js";
 
   function openModal(title) {
     $("preview-title").textContent = title;

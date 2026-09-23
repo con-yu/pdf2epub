@@ -6,11 +6,14 @@ import time
 import uuid
 
 from flask import Flask, jsonify, render_template, request, send_file
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 from converter.epub_builder import build_epub
 from converter.pdf_parser import DEFAULT_CONFIG, build_report, parse_pdf
 
 app = Flask(__name__)
+# 反代场景（如 Nginx 下 /pdf2epub/ 子路径）下正确生成 url_for 链接与前缀
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 SESSIONS = {}  # sid -> {"pdf": bytes, "name": str, "ts": float}
 SESSION_TTL = 3600
 
