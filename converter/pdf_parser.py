@@ -43,6 +43,8 @@ class Block:
     image: bytes = b""
     ext: str = "png"
     res_name: str = ""      # EPUB 内图片资源名（构建期填充）
+    line_full: bool = False  # 末行是否顶满栏宽（用于断段合并判断）
+    indented: bool = False   # 首行是否相对后续行缩进（新段落特征）
 
 
 @dataclass
@@ -135,7 +137,7 @@ def _extract_blocks(doc, config):
                                     ext=block.get("ext", "png"), page=pno))
                 continue
 
-            lines, sizes, bold_first = [], [], False
+            lines, sizes, boxes, bold_first = [], [], [], False
             for line in block["lines"]:
                 spans = line["spans"]
                 text = "".join(s["text"] for s in spans).strip()
@@ -148,15 +150,24 @@ def _extract_blocks(doc, config):
                                     or PAGE_NUM_PATTERN.match(text)):
                         continue
                 lines.append(text)
+                boxes.append(line["bbox"])
                 sizes.extend(s["size"] for s in spans if s["text"].strip())
                 if not bold_first and spans:
                     bold_first = _is_bold(spans[0])
 
             para = _join_lines(lines)
             if para:
-                blocks.append(Block(kind="p", text=para, page=pno,
-                                    size=max(sizes) if sizes else 0.0,
-                                    bold=bold_first))
+                size = max(sizes) if sizes else 0.0
+                tol = max(size * 1.2, 6.0)
+                xs0 = [b[0] for b in boxes]
+                xs1 = [b[2] for b in boxes]
+                # 末行顶满栏宽 → 段落可能在下一个块继续
+                line_full = xs1[-1] >= max(xs1) - tol
+                # 首行相对本块其余行缩进 → 新段落特征
+                indented = len(xs0) > 1 and xs0[0] > min(xs0[1:]) + tol
+                blocks.append(Block(kind="p", text=para, page=pno, size=size,
+                                    bold=bold_first, line_full=line_full,
+                                    indented=indented))
     return blocks
 
 
@@ -166,6 +177,52 @@ def _body_font_size(blocks):
         if b.kind == "p" and b.size:
             c[round(b.size * 2) / 2] += len(b.text)
     return c.most_common(1)[0][0] if c else 11.0
+
+
+_TERMINAL_CHARS = "。！？…!?."
+_CLOSING_CHARS = "\"'”’」』）)】]》〉 \t"
+
+
+def _ends_terminal(text):
+    """文本是否以段落终止标点结尾（允许标点后跟引号/括号收尾）。"""
+    t = text.rstrip(_CLOSING_CHARS)
+    return bool(t) and t[-1] in _TERMINAL_CHARS
+
+
+def _should_merge(prev, cur, body_size, config):
+    """判断相邻两个文本块是否属于同一段（PDF 常在段落中间拆块）。
+
+    依据中文排版特征：上一块末行顶满栏宽（整行）且句尾无终止标点，
+    说明段落未结束；下一块无首行缩进、字号一致、非标题时才合并。
+    """
+    if prev.kind != "p" or cur.kind != "p":
+        return False
+    if not prev.line_full:            # 上一段末行未顶满 → 段落已自然结束
+        return False
+    if _ends_terminal(prev.text):     # 以 。！？… 等结尾 → 段落已结束
+        return False
+    if _heading_level(prev, body_size, config):  # 标题块不吸收后文
+        return False
+    if _heading_level(cur, body_size, config):   # 标题块不被并入
+        return False
+    if cur.indented:                  # 首行缩进 → 新段落
+        return False
+    if prev.size and cur.size and abs(cur.size - prev.size) > 1.0:  # 脚注等
+        return False
+    return True
+
+
+def _merge_broken_paragraphs(blocks, body_size, config):
+    """合并被 PDF 拆块截断的段落（含跨页断段）。"""
+    merged = []
+    for b in blocks:
+        if merged and _should_merge(merged[-1], b, body_size, config):
+            prev = merged[-1]
+            prev.text = _join_lines([prev.text, b.text])
+            prev.line_full = b.line_full  # 末行状态随最后一块更新
+        else:
+            merged.append(b)
+    return merged
 
 
 def _heading_level(b, body_size, config):
@@ -247,6 +304,7 @@ def parse_pdf(pdf_bytes, config, filename=""):
 
     blocks = _extract_blocks(doc, config)
     body_size = _body_font_size(blocks)
+    blocks = _merge_broken_paragraphs(blocks, body_size, config)
 
     used_toc = False
     toc = doc.get_toc(simple=True) if config["prefer_embedded_toc"] else []
